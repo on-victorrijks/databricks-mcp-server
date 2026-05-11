@@ -2,10 +2,18 @@
 Databricks MCP Server
 
 This module implements a standalone MCP server that provides tools for interacting
-with Databricks APIs. It follows the Model Context Protocol standard, communicating
-via stdio and directly connecting to Databricks when tools are invoked.
+with Databricks APIs. It supports two transports:
+
+  stdio  — for Claude Code's built-in subprocess integration (default)
+  sse    — HTTP/SSE server for container or remote deployments
+
+Usage:
+    python -m src.server                         # stdio (default)
+    python -m src.server --transport sse         # SSE on 0.0.0.0:8000
+    python -m src.server --transport sse --host 127.0.0.1 --port 9000
 """
 
+import argparse
 import asyncio
 import json
 import logging
@@ -32,14 +40,22 @@ logger = logging.getLogger(__name__)
 class DatabricksMCPServer(FastMCP):
     """An MCP server for Databricks APIs."""
 
-    def __init__(self):
-        """Initialize the Databricks MCP server."""
-        super().__init__(name="databricks-mcp", 
-                         version="1.0.0", 
-                         instructions="Use this server to manage Databricks resources")
+    def __init__(self, host: str = "0.0.0.0", port: int = 8000):
+        """Initialize the Databricks MCP server.
+
+        Args:
+            host: Bind address for SSE transport (ignored in stdio mode).
+            port: Port for SSE transport (ignored in stdio mode).
+        """
+        super().__init__(
+            name="databricks-mcp",
+            instructions="Use this server to manage Databricks resources",
+            host=host,
+            port=port,
+        )
         logger.info("Initializing Databricks MCP server")
         logger.info(f"Databricks host: {settings.DATABRICKS_HOST}")
-        
+
         # Register tools
         self._register_tools()
     
@@ -175,6 +191,34 @@ class DatabricksMCPServer(FastMCP):
                 logger.error(f"Error exporting notebook: {str(e)}")
                 return [{"text": json.dumps({"error": str(e)})}]
         
+        @self.tool(
+            name="upload_workspace_file",
+            description=(
+                "Upload a file to the Databricks workspace. "
+                "Parameters: path (required) — absolute workspace destination path "
+                "(e.g. /Users/user@example.com/script.py); "
+                "content (required) — raw file content as a string; "
+                "format (optional, default AUTO) — AUTO, SOURCE, HTML, JUPYTER, DBC, or R_MARKDOWN; "
+                "language (optional) — SCALA, PYTHON, SQL, or R, required when format is SOURCE "
+                "and the file is a notebook; "
+                "overwrite (optional, default false) — overwrite an existing file."
+            ),
+        )
+        async def upload_workspace_file(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Uploading workspace file with params: {params}")
+            try:
+                result = await notebooks.import_file(
+                    path=params["path"],
+                    content=params["content"],
+                    format=params.get("format", "AUTO"),
+                    language=params.get("language"),
+                    overwrite=bool(params.get("overwrite", False)),
+                )
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error uploading workspace file: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
         # DBFS tools
         @self.tool(
             name="list_files",
@@ -209,24 +253,50 @@ class DatabricksMCPServer(FastMCP):
                 return [{"text": json.dumps({"error": str(e)})}]
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Databricks MCP Server")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse"],
+        default=os.environ.get("MCP_TRANSPORT", "stdio"),
+        help="Transport protocol: stdio (default) or sse",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("MCP_HOST", "0.0.0.0"),
+        help="Bind host for SSE transport (default: 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("MCP_PORT", "8000")),
+        help="Port for SSE transport (default: 8000)",
+    )
+    return parser.parse_args()
+
+
 async def main():
     """Main entry point for the MCP server."""
+    args = _parse_args()
     try:
-        logger.info("Starting Databricks MCP server")
-        server = DatabricksMCPServer()
-        
-        # Use the built-in method for stdio servers
-        # This is the recommended approach for MCP servers
-        await server.run_stdio_async()
-            
+        server = DatabricksMCPServer(host=args.host, port=args.port)
+
+        if args.transport == "sse":
+            logger.info(f"Starting Databricks MCP server (SSE) on {args.host}:{args.port}")
+            print(f"Databricks MCP server listening on http://{args.host}:{args.port}/sse",
+                  flush=True)
+            await server.run_sse_async()
+        else:
+            logger.info("Starting Databricks MCP server (stdio)")
+            await server.run_stdio_async()
+
     except Exception as e:
         logger.error(f"Error in Databricks MCP server: {str(e)}", exc_info=True)
         raise
 
 
 if __name__ == "__main__":
-    # Turn off buffering in stdout
-    if hasattr(sys.stdout, 'reconfigure'):
+    if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(line_buffering=True)
-    
+
     asyncio.run(main()) 

@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "databricks": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "src.server"],
+      "env": {}
+    }
+  },
+  "permissions": {
+    "allow": [
+      "Bash(pytest:*)",
+      "Bash(pylint:*)",
+      "Bash(flake8:*)",
+      "Bash(mypy:*)",
+      "Bash(uv:*)",
+      "Bash(python:*)"
+    ]
+  }
+}

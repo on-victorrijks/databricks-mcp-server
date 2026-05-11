@@ -24,6 +24,7 @@ The Databricks MCP Server exposes the following tools:
 - **export_notebook**: Export a notebook from the workspace
 - **list_files**: List files and directories in a DBFS path
 - **execute_sql**: Execute a SQL statement
+- **upload_workspace_file**: Upload any file (Python, SQL, notebooks, etc.) to the Databricks workspace
 
 ## Installation
 
@@ -145,6 +146,63 @@ databricks-mcp-server/
 ```
 
 See `project_structure.md` for a more detailed view of the project structure.
+
+## Claude Code Integration
+
+The server is pre-configured for Claude Code via the project's `.claude/settings.json`. Follow these steps to enable it.
+
+### 1. Create a `.env` file
+
+Copy `.env.example` to `.env` and fill in your credentials:
+
+```bash
+cp .env.example .env
+```
+
+`.env` contents:
+
+```
+DATABRICKS_HOST=https://your-workspace.azuredatabricks.net
+DATABRICKS_TOKEN=dapi...
+```
+
+### 2. Install dependencies
+
+```powershell
+# Windows
+uv venv
+uv pip install -e ".[dev]"
+```
+
+### 3. Start Claude Code in this directory
+
+```powershell
+claude
+```
+
+Claude Code will pick up the MCP server configuration automatically from `.claude/settings.json`. On first use it starts the server process in the background over stdio.
+
+### 4. Test the tools
+
+Once inside Claude Code you can immediately call any tool, for example:
+
+```
+list all my Databricks clusters
+```
+
+```
+upload a file to /Users/me@example.com/hello.py with content: print("hello")
+```
+
+```
+list notebooks in /
+```
+
+### Troubleshooting
+
+- **Server not responding** — make sure `DATABRICKS_HOST` and `DATABRICKS_TOKEN` are set in `.env` or as environment variables.
+- **Import error on startup** — run `uv pip install -e .` from the project root.
+- **Logs** — the server writes to `databricks_mcp.log` in the project root.
 
 ## Development
 

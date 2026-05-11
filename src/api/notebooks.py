@@ -106,28 +106,15 @@ async def list_notebooks(path: str) -> Dict[str, Any]:
     logger.info(f"Listing notebooks in path: {path}")
     return make_api_request("GET", "/api/2.0/workspace/list", params={"path": path})
 
-
+"""
 async def delete_notebook(path: str, recursive: bool = False) -> Dict[str, Any]:
-    """
-    Delete a notebook or directory.
-    
-    Args:
-        path: The path to delete
-        recursive: Whether to recursively delete directories
-        
-    Returns:
-        Empty response on success
-        
-    Raises:
-        DatabricksAPIError: If the API request fails
-    """
     logger.info(f"Deleting path: {path}")
     return make_api_request(
         "POST", 
         "/api/2.0/workspace/delete", 
         data={"path": path, "recursive": recursive}
     )
-
+"""
 
 async def create_directory(path: str) -> Dict[str, Any]:
     """
@@ -144,6 +131,51 @@ async def create_directory(path: str) -> Dict[str, Any]:
     """
     logger.info(f"Creating directory: {path}")
     return make_api_request("POST", "/api/2.0/workspace/mkdirs", data={"path": path})
+
+
+async def import_file(
+    path: str,
+    content: str,
+    format: str = "AUTO",
+    language: Optional[str] = None,
+    overwrite: bool = False,
+) -> Dict[str, Any]:
+    """Import a file into the Databricks workspace.
+
+    Supports notebooks and arbitrary files. Use format="AUTO" to let Databricks
+    infer the type from the file extension, or specify a format explicitly.
+
+    Args:
+        path: Absolute workspace path for the imported file (e.g. /Users/me/script.py).
+        content: Raw file content as a string; will be base64-encoded automatically.
+        format: Import format — AUTO, SOURCE, HTML, JUPYTER, DBC, or R_MARKDOWN.
+            AUTO determines format from the file extension and is suitable for
+            non-notebook files.
+        language: Notebook language (SCALA, PYTHON, SQL, R). Required only when
+            format is SOURCE and the file is a notebook.
+        overwrite: If True, overwrite an existing object at the given path.
+
+    Returns:
+        Empty dict on success.
+
+    Raises:
+        DatabricksAPIError: If the API request fails.
+    """
+    logger.info(f"Importing file to workspace path: {path}")
+
+    encoded_content = base64.b64encode(content.encode("utf-8")).decode("utf-8")
+
+    import_data: Dict[str, Any] = {
+        "path": path,
+        "format": format,
+        "content": encoded_content,
+        "overwrite": overwrite,
+    }
+
+    if language:
+        import_data["language"] = language
+
+    return make_api_request("POST", "/api/2.0/workspace/import", data=import_data)
 
 
 def is_base64(content: str) -> bool:
